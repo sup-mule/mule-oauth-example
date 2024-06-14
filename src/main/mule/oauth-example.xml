@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	<configuration-properties doc:name="Configuration properties" doc:id="be75f851-6d4d-472c-94ba-61574d30ad4e" file="config.yaml" />
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="7845b662-6e7c-44d5-81e1-09102cb3e32b" >
+		<http:listener-connection host="0.0.0.0" port="8083" />
+	</http:listener-config>
+	<os:object-store name="tokenObject_store" doc:name="Object store" doc:id="f3dc3d11-d93d-4c36-8a00-e73b8a192807" />
+	<sub-flow name="with-storage-token-flow" doc:id="b954c74c-e03a-4b70-bc36-9107b0c566e2" >
+		<os:retrieve doc:name="Retrieve" doc:id="90a9d5d5-15cd-4f64-b5d8-51d5c1c884c8" key="expires" objectStore="tokenObject_store" target="expires">
+			<os:default-value ><![CDATA[#[""]]]></os:default-value>
+		</os:retrieve>
+		<choice doc:name="Choice" doc:id="3b2b731c-9b17-4600-a48b-b141c727becc" >
+			<when expression='#[vars.expires == "" or now() &gt;= vars.expires]'>
+				<ee:transform doc:name="Transform Message" doc:id="70e20e2f-d17c-4110-9ba0-4749282702a1" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/x-www-form-urlencoded
+---
+{
+   	client_id: p('auth.client_id'),
+    client_secret: p('auth.client_secret'),
+    grant_type: p('auth.grant_type'),
+//    audience: p('auth.audience'), // you can enable this if you need audience field in the future
+    resource: p('auth.resource')
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<http:request method="POST" doc:name="Request" doc:id="a1e810e2-fc0f-46e6-93c0-ca1e360ae5fd" url="${auth.token_url}" />
+				<os:store doc:name="Store" doc:id="16a7d575-6629-4ff3-bb70-4f0e9d542d37" key="expires" objectStore="tokenObject_store">
+					<os:value ><![CDATA[#[now() + "PT$(payload.expires_in - 1 as String)S" as Period]]]></os:value>
+				</os:store>
+				<set-variable value="#[payload.access_token]" doc:name="Set Variable" doc:id="b0f2e50e-717f-45f2-82ac-70a5f5784841" variableName="token" />
+				<os:store doc:name="Store" doc:id="9e0a31cb-8130-4d59-9e2a-364757b78ea4" key="token" objectStore="tokenObject_store">
+					<os:value ><![CDATA[#[vars.token]]]></os:value>
+				</os:store>
+			</when>
+			<otherwise >
+				<os:retrieve doc:name="Retrieve" doc:id="517dbdf5-a13c-40a8-aee3-86fcba6f5ab3" key="token" objectStore="tokenObject_store" target="token">
+					<os:default-value ><![CDATA[#["Error"]]]></os:default-value>
+				</os:retrieve>
+			</otherwise>
+		</choice>
+		<ee:transform doc:name="Transform Message" doc:id="68e0e5b3-f217-4383-b78b-ff7871e48fa8" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+"Bearer $(vars.token)"]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</sub-flow>
+	<sub-flow name="no-storage-token-flow" doc:id="113bd70b-b455-4a65-91ab-6170bbe7a188" >
+		<ee:transform doc:name="Transform Message" doc:id="1f45b7a5-3e0d-453d-95d0-e1732898e7b1" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/x-www-form-urlencoded
+---
+{
+   	client_id: p('auth.client_id'),
+    client_secret: p('auth.client_secret'),
+    grant_type: p('auth.grant_type'),
+//    audience: p('auth.audience'), // you can enable this if you need audience field in the future
+    resource: p('auth.resource')
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<http:request method="POST" doc:name="Request" doc:id="c4458b1d-a2d7-4f58-965f-27263631bced" url="${auth.token_url}"/>
+		<ee:transform doc:name="Transform Message" doc:id="38a11645-575f-4122-b2ea-a004516e7c28" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+"Bearer $(payload.access_token)"]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</sub-flow>
+	<flow name="oauth-exampleFlow" doc:id="6d3c2e5e-6d9f-465c-a231-3a1389e75a6a" >
+		<http:listener doc:name="Listener" doc:id="f6edff93-4069-447e-9881-82bcfd7323da" config-ref="HTTP_Listener_config" path="/test"/>
+		<flow-ref doc:name="Flow Reference" doc:id="2f285e5a-6275-4005-bb1b-81e20b45440d" name="with-storage-token-flow" target="auth_header"/>
+		<http:request method="GET" doc:name="Request" doc:id="bd985594-51a4-40d0-8868-28e84dafa06c" url="http://localhost:8082/token/validate">
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"Authorization" : vars.auth_header
+}]]]></http:headers>
+		</http:request>
+	</flow>
+</mule>

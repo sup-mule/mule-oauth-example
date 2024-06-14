@@ -1,0 +1,6 @@
+auth:
+  token_url: http://localhost:8082/token
+  client_id: abcde
+  client_secret: abcde
+  grant_type: client_credentials
+  resource: resource
